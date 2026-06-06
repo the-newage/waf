@@ -354,8 +354,7 @@ func (s *Service[SiteT]) validateSite(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(req.Context(), siteContextKey, siteT)
-		req = req.WithContext(ctx)
+		req = req.WithContext(WithSite(req.Context(), siteT))
 
 		next.ServeHTTP(w, req)
 	})

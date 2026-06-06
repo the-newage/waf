@@ -468,7 +468,7 @@ func TestServeStaticFileErrors(t *testing.T) {
 			MediaType: "text/plain",
 		}
 		r := httptest.NewRequest(http.MethodGet, "/noetag.txt", nil)
-		r = r.WithContext(context.WithValue(r.Context(), siteContextKey, site))
+		r = r.WithContext(WithSite(r.Context(), site))
 		w := httptest.NewRecorder()
 		h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			s.ServeStaticFile(w, req, "/noetag.txt")
@@ -488,7 +488,7 @@ func TestServeStaticFileErrors(t *testing.T) {
 			MediaType: "",
 		}
 		r := httptest.NewRequest(http.MethodGet, "/nomtype.txt", nil)
-		r = r.WithContext(context.WithValue(r.Context(), siteContextKey, site))
+		r = r.WithContext(WithSite(r.Context(), site))
 		w := httptest.NewRecorder()
 		h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			s.ServeStaticFile(w, req, "/nomtype.txt")
@@ -506,7 +506,7 @@ func TestServeStaticFileMissing(t *testing.T) {
 	site.initializeStaticFiles()
 
 	r := httptest.NewRequest(http.MethodGet, "/missing.txt", nil)
-	r = r.WithContext(context.WithValue(r.Context(), siteContextKey, site))
+	r = r.WithContext(WithSite(r.Context(), site))
 	w := httptest.NewRecorder()
 	h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		s.ServeStaticFile(w, req, "/missing.txt")
@@ -529,7 +529,7 @@ func TestServeStaticFileImmutable(t *testing.T) {
 	require.NoError(t, errE, "% -+#.1v", errE)
 
 	r := httptest.NewRequest(http.MethodGet, "/asset.js", nil)
-	r = r.WithContext(context.WithValue(r.Context(), siteContextKey, site))
+	r = r.WithContext(WithSite(r.Context(), site))
 	w := httptest.NewRecorder()
 	h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		s.ServeStaticFile(w, req, "/asset.js")
