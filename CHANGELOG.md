@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EncodeMetadata` and `EncodeMetadataList` encode data as SFV for HTTP.
 - `Server.Host` returns the canonical host string for the given domain.
 - `Forbidden` and `ForbiddenWithError` replies with 403 Forbidden.
+- `WithSite` is a helper to set the site in the context. Primarily useful in tests.
 
 ### Fixed
 

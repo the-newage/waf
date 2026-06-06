@@ -69,6 +69,15 @@ func MustGetSite[SiteT hasSite](ctx context.Context) SiteT { //nolint:ireturn
 	return s
 }
 
+// WithSite returns a copy of ctx with site stored in it, so that GetSite and MustGetSite
+// can retrieve it.
+//
+// The Waf service stores the site automatically for each request (based on the
+// host header). WithSite is primarily useful in tests that call site-aware code directly.
+func WithSite[SiteT hasSite](ctx context.Context, site SiteT) context.Context {
+	return context.WithValue(ctx, siteContextKey, site)
+}
+
 // GetMetrics returns metrics from context ctx and true if the metrics
 // are stored in the context. If the metrics are not stored in the context,
 // it returns a new dummy metrics instance and false.
