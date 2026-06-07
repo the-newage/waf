@@ -3415,6 +3415,10 @@ func TestRunExamples(t *testing.T) { //nolint:paralleltest
 			time.Sleep(10 * time.Second)
 
 			transport := cleanhttp.DefaultTransport()
+			// DialContext below maps site.test to the local listener, so we must not route through any HTTP(S) proxy
+			// configured in the environment. Otherwise the request to site.test is sent to the proxy, which then tries
+			// to reach the real host and hangs, making the test slow and flaky.
+			transport.Proxy = nil
 			transport.ForceAttemptHTTP2 = true
 			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 				if addr == "site.test:443" {

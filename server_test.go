@@ -239,6 +239,10 @@ func TestServer(t *testing.T) {
 	require.NoError(t, err)
 
 	transport := cleanhttp.DefaultTransport()
+	// DialContext below maps every host to a local listener, so we must not route through any HTTP(S) proxy
+	// configured in the environment. Otherwise requests to non-localhost hosts (example.com, something.com) are
+	// sent to the proxy, which then tries to reach the real hosts and hangs, making the test slow and flaky.
+	transport.Proxy = nil
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		// We map everything to localhost.
 		_, port, err := net.SplitHostPort(addr)
@@ -467,6 +471,10 @@ func TestServerACME(t *testing.T) { //nolint:paralleltest
 	t.Logf("ListenAddress: %s", server.ListenAddrHTTPS())
 
 	transport := cleanhttp.DefaultTransport()
+	// DialContext below maps site.test to the local listener, so we must not route through any HTTP(S) proxy
+	// configured in the environment. Otherwise the request to site.test is sent to the proxy, which then tries
+	// to reach the real host and hangs, making the test slow and flaky.
+	transport.Proxy = nil
 	transport.ForceAttemptHTTP2 = true
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if addr == "site.test:443" {
