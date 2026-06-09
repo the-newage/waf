@@ -74,9 +74,7 @@ var canonicalLoggerMessageContextKey = &contextKey{"canonical-logger-message"} /
 
 // canonicalLogger is similar to zerolog.Ctx, but uses canonicalLoggerContextKey context key.
 func canonicalLogger(ctx context.Context) *zerolog.Logger {
-	if l, ok := ctx.Value(canonicalLoggerContextKey).(*zerolog.Logger); ok {
-		return l
-	} else if l = zerolog.DefaultContextLogger; l != nil {
+	if l, ok := ctx.Value(canonicalLoggerContextKey).(*zerolog.Logger); ok && l != nil {
 		return l
 	}
 	return disabledLogger
@@ -99,6 +97,15 @@ func SetCanonicalLogMessage(ctx context.Context, message string) {
 	if msg, ok := ctx.Value(canonicalLoggerMessageContextKey).(*string); ok && msg != nil {
 		*msg = message
 	}
+}
+
+// SetCanonicalLogField adds a field with the given key and value to the canonical log line for the request.
+// It mutates the request-scoped canonical logger in place, so the field appears on the single canonical log
+// line emitted at the end of the request. It is a no-op when no canonical logger is set in ctx.
+func SetCanonicalLogField(ctx context.Context, key string, value any) {
+	canonicalLogger(ctx).UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Any(key, value)
+	})
 }
 
 func canonicalLoggerWithError(ctx context.Context, err errors.E) {
