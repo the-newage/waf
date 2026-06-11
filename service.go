@@ -931,9 +931,9 @@ func (s *Service[SiteT]) PrepareJSON(w http.ResponseWriter, req *http.Request, d
 		w.Header().Set("Content-Encoding", contentEncoding)
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
-	if len(w.Header().Values("Cache-Control")) == 0 {
-		w.Header().Set("Cache-Control", "no-cache")
-	}
+	// Merge our cache policy with anything a caller already set, so an
+	// orthogonal directive like private is kept alongside it.
+	w.Header().Set("Cache-Control", mergeCacheControl(w.Header().Values("Cache-Control"), "no-cache"))
 	w.Header().Set("Etag", etag)
 
 	return encoded
@@ -988,6 +988,99 @@ func (s *Service[SiteT]) GetRoute(path, method string) (ResolvedRoute, errors.E)
 }
 
 // TODO: Use Vite's manifest.json to send preload headers.
+
+// mergeCacheControl combines the caller-set Cache-Control header values (each a
+// possibly comma-separated directive list) with the defaults WAF applies, so
+// neither is silently dropped. The defaults are only defaults: when the caller
+// and a default set the same directive name the caller's value wins, and WAF
+// fills in only the directive names the caller did not set. Orthogonal
+// directives a caller set are kept alongside the defaults. When the caller
+// set nothing, the defaults are returned verbatim.
+//
+// A caller can also remove a default by setting that directive with an empty
+// value (for example "max-age="): the name still suppresses the matching
+// default, but the empty directive itself is not emitted. An accidental empty
+// value is dropped the same way, since it would be an invalid directive anyway.
+func mergeCacheControl(existing []string, defaults string) string {
+	// The caller's directives take precedence, so we keep all of them and remember
+	// their names.
+	existingNames := map[string]bool{}
+	var merged []string
+	for _, value := range existing {
+		for _, directive := range splitCacheControlDirectives(value) {
+			directive = strings.TrimSpace(directive)
+			if directive == "" {
+				continue
+			}
+			// The name is recorded even when the directive is dropped below, so a
+			// default with the same name stays suppressed.
+			existingNames[cacheControlDirectiveName(directive)] = true
+			if cacheControlDirectiveHasEmptyValue(directive) {
+				continue
+			}
+			merged = append(merged, directive)
+		}
+	}
+	// When the caller set no directive (a tombstone still counts), return the
+	// defaults verbatim.
+	if len(existingNames) == 0 {
+		return defaults
+	}
+	// A default is added only when the caller did not already set that directive.
+	for _, directive := range splitCacheControlDirectives(defaults) {
+		directive = strings.TrimSpace(directive)
+		if directive == "" || existingNames[cacheControlDirectiveName(directive)] {
+			continue
+		}
+		merged = append(merged, directive)
+	}
+	return strings.Join(merged, ",")
+}
+
+// splitCacheControlDirectives splits a Cache-Control header value into its
+// directives on top-level commas, leaving commas inside a quoted-string intact
+// (for example the field-name list of private="Set-Cookie, Authorization").
+func splitCacheControlDirectives(value string) []string {
+	var directives []string
+	start := 0
+	inQuotes := false
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '"':
+			inQuotes = !inQuotes
+		case '\\':
+			// A quoted-pair escapes the next byte inside a quoted-string.
+			if inQuotes && i+1 < len(value) {
+				i++
+			}
+		case ',':
+			if !inQuotes {
+				directives = append(directives, value[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(directives, value[start:])
+}
+
+// cacheControlDirectiveHasEmptyValue reports whether a directive is written with
+// an "=" but no value after it (for example "max-age="). A caller uses such a
+// directive to drop a same-named default; it is also how an invalid empty value
+// is discarded.
+func cacheControlDirectiveHasEmptyValue(directive string) bool {
+	i := strings.IndexByte(directive, '=')
+	return i >= 0 && strings.TrimSpace(directive[i+1:]) == ""
+}
+
+// cacheControlDirectiveName returns the lower-cased name of a Cache-Control
+// directive (the part before any "=").
+func cacheControlDirectiveName(directive string) string {
+	directive = strings.TrimSpace(directive)
+	if i := strings.IndexByte(directive, '='); i >= 0 {
+		directive = directive[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(directive))
+}
 
 // ServeStaticFile replies to the request by serving the file at path from service's static files.
 //
@@ -1062,10 +1155,12 @@ func (s *Service[SiteT]) serveStaticFile(w http.ResponseWriter, req *http.Reques
 		w.Header().Set("Content-Encoding", contentEncoding)
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(f.Data)))
+	// Merge our cache policy with anything a caller already set, so an
+	// orthogonal directive like private is kept alongside it.
 	if immutable {
-		w.Header().Set("Cache-Control", "max-age=31536000,immutable,stale-while-revalidate=86400")
+		w.Header().Set("Cache-Control", mergeCacheControl(w.Header().Values("Cache-Control"), "max-age=31536000,immutable,stale-while-revalidate=86400"))
 	} else {
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", mergeCacheControl(w.Header().Values("Cache-Control"), "no-cache"))
 	}
 	w.Header().Set("Etag", f.Etag)
 

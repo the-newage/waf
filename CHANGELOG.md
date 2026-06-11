@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Forbidden` and `ForbiddenWithError` replies with 403 Forbidden.
 - `WithSite` is a helper to set the site in the context. Primarily useful in tests.
 - `SetCanonicalLogField` adds a field to the canonical log line.
+- Merge `Cache-Control` headers from defaults and callers.
 
 ### Fixed
 

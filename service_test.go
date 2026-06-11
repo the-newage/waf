@@ -541,6 +541,114 @@ func TestServeStaticFileImmutable(t *testing.T) {
 	assert.Contains(t, res.Header.Get("Cache-Control"), "immutable")
 }
 
+func TestServeStaticFileMergesCallerCacheControl(t *testing.T) {
+	t.Parallel()
+
+	s := &testService{Service: Service[*testSite]{
+		router: new(Router),
+	}}
+	site := &testSite{Site: Site{Domain: "example.com"}}
+	site.initializeStaticFiles()
+	errE := site.addStaticFile("/data.txt", "text/plain", []byte("some data"))
+	require.NoError(t, errE, "% -+#.1v", errE)
+
+	r := httptest.NewRequest(http.MethodGet, "/data.txt", nil)
+	r = r.WithContext(WithSite(r.Context(), site))
+	w := httptest.NewRecorder()
+	h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// A caller (for example an auth middleware) sets its own Cache-Control.
+		w.Header().Set("Cache-Control", "private")
+		s.ServeStaticFile(w, req, "/data.txt")
+	}))
+	h.ServeHTTP(w, r)
+	res := w.Result()
+	t.Cleanup(func() { res.Body.Close() }) //nolint:errcheck,gosec
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	// The non-immutable no-cache default is merged with the caller's private.
+	assert.Equal(t, "private,no-cache", res.Header.Get("Cache-Control"))
+}
+
+func TestServeStaticFileImmutableMergesCallerCacheControl(t *testing.T) {
+	t.Parallel()
+
+	s := &testService{Service: Service[*testSite]{
+		router:          new(Router),
+		IsImmutableFile: func(_ string) bool { return true },
+	}}
+	site := &testSite{Site: Site{Domain: "example.com"}}
+	site.initializeStaticFiles()
+	errE := site.addStaticFile("/asset.js", "application/javascript", bytes.Repeat([]byte("x"), 1100))
+	require.NoError(t, errE, "% -+#.1v", errE)
+
+	r := httptest.NewRequest(http.MethodGet, "/asset.js", nil)
+	r = r.WithContext(WithSite(r.Context(), site))
+	w := httptest.NewRecorder()
+	h := setCanonicalLogger(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// The caller's private is kept alongside the immutable policy.
+		w.Header().Set("Cache-Control", "private")
+		s.ServeStaticFile(w, req, "/asset.js")
+	}))
+	h.ServeHTTP(w, r)
+	res := w.Result()
+	t.Cleanup(func() { res.Body.Close() }) //nolint:errcheck,gosec
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	cacheControl := res.Header.Get("Cache-Control")
+	assert.Contains(t, cacheControl, "private")
+	assert.Contains(t, cacheControl, "immutable")
+}
+
+func TestMergeCacheControl(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		existing []string
+		defaults string
+		want     string
+	}{
+		{"empty existing returns defaults verbatim", nil, "no-cache", "no-cache"},
+		{"orthogonal directive preserved", []string{"private"}, "no-cache", "private,no-cache"},
+		{"caller overrides same-named default", []string{"max-age=60"}, "max-age=31536000,immutable", "max-age=60,immutable"},
+		{"duplicate directive collapses", []string{"no-cache"}, "no-cache", "no-cache"},
+		{"orthogonal kept with multi-directive defaults", []string{"private"}, "max-age=31536000,immutable", "private,max-age=31536000,immutable"},
+		{"caller value wins case-insensitively", []string{"No-Cache"}, "no-cache", "No-Cache"},
+		{"multiple header values are flattened", []string{"private", "max-age=60"}, "no-cache", "private,max-age=60,no-cache"},
+		{"empty value removes same-named default", []string{"max-age="}, "max-age=3600,immutable", "immutable"},
+		{"empty value does not touch orthogonal default", []string{"max-age="}, "no-cache", "no-cache"},
+		{"empty value keeps other caller directives", []string{"private,max-age="}, "max-age=3600", "private"},
+		{"empty value removing only default yields empty", []string{"no-cache="}, "no-cache", ""},
+		{"quoted comma is not a separator", []string{`private="Set-Cookie, Authorization"`}, "no-cache", `private="Set-Cookie, Authorization",no-cache`},
+		{"quoted directive overrides same-named default", []string{`no-cache="Set-Cookie, X"`}, "no-cache", `no-cache="Set-Cookie, X"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, mergeCacheControl(tt.existing, tt.defaults))
+		})
+	}
+}
+
+func TestSplitCacheControlDirectives(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{"plain list", "private,no-cache", []string{"private", "no-cache"}},
+		{"quoted comma kept", `private="Set-Cookie, Authorization",max-age=60`, []string{`private="Set-Cookie, Authorization"`, "max-age=60"}},
+		{"escaped quote inside quotes", `no-cache="a\",b"`, []string{`no-cache="a\",b"`}},
+		{"empty", "", []string{""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, splitCacheControlDirectives(tt.value))
+		})
+	}
+}
+
 func TestHandlePanic(t *testing.T) {
 	t.Parallel()
 
