@@ -103,6 +103,22 @@ func MustGetMetrics(ctx context.Context) *Metrics {
 	return m
 }
 
+// HasConnectionUpgrade reports whether the request is a connection upgrade request
+// (e.g., a WebSocket handshake).
+//
+// This is useful in handlers whose routes can also receive upgrade requests which
+// should be proxied to the development backend (e.g., Vite connects its HMR WebSocket
+// to the site root during development), so that the handler can call Proxy for them
+// instead of serving its regular response.
+func HasConnectionUpgrade(req *http.Request) bool {
+	for value := range strings.SplitSeq(req.Header.Get("Connection"), ",") {
+		if strings.ToLower(strings.TrimSpace(value)) == "upgrade" {
+			return true
+		}
+	}
+	return false
+}
+
 // NotFound replies to the request with the 404 (not found) HTTP code and the corresponding
 // error message.
 //
