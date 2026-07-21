@@ -1005,7 +1005,7 @@ func mergeCacheControl(existing []string, defaults string) string {
 	// The caller's directives take precedence, so we keep all of them and remember
 	// their names.
 	existingNames := map[string]bool{}
-	var merged []string
+	var merged []string //nolint:prealloc
 	for _, value := range existing {
 		for _, directive := range splitCacheControlDirectives(value) {
 			directive = strings.TrimSpace(directive)
